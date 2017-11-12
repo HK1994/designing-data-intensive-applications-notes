@@ -119,7 +119,57 @@ The ease with which you can modify a data system and adapt to changing requireme
 
 ## Chapter 2 - Data Models and Query Languages
 
+'The limits of my language mean the limits of my world' - Wittgenstein
+
+Data models are how we _think about the problem_ that we are solving
+
+Most applications are built by layering one data model on top of another. The key question is: how is it represented in terms of the next-lower layer?
+
+The basic idea is: each layer hides the complexity of the layers below it by provdigin a clean data model. These abstractions allow different groups of people to work together effectively.
+
+The data model has such a profound effect on what the software above it can do, so it is important to choose one appropriate to the application.
+
+### Relational Model vs Document Model
+
+SQL is the best-know data model today: data is organized into relations (tables in SQL), where each relation is an unordered collection of tuples (rows in SQL).
+
+Roots of relational database lie in business data processing, use cases typically were _transaction processing_ (sales, banking transactions) and _batch processing_ (invoicing, payroll, reporting).
+
+### The Birth of NoSQL
+
+NoSQL is the latest attempt to overthrow the relational model's dominance.
+
+Several driving forces behind the adoption of NoSQL databases including:
+- Need for greater scalability than relational databases can easily achieve: large datasets or high write throughput
+- Widespread preference for FOSS over commercial database products
+- Specialized query operations that are nto well supported by the relational model
+- Frustration with the restrictiveness of relational schemas, and a desire for a more dynamic and expressive data model
+
+Different applications have different requirements, and the best choice of one technology for one use case may well be different from the best choice for another use case.
+
+_Polyglot persistence_ relational and nonrelational datastores used in parallel
+
+### The Object-Relational Mismatch
+
+Most application development today is done in OO langauges, which leads to the criticism of the SQL data model: if data is stored in relational tables, and awkward translation layer is required between the objects in the application code and the db model of rows, tables and columns. _Impedance mismatch_.
+
+For a Data Structure like a resume, wich is mostly a self-contained _document_, a JSON representation can be quite appropriate.
+
+JSON representation has better _locality_ than the multi-table schema. To fetch a profile in the relational example, you need to either perform multiple queries or perform messy multi-way join between the users and subordinate tables.
+
+### Many-to-One and Many-to-Many Relationships
+
+If the UI has free-text fields for entering region and industry, it makes sense to store them as plain-text strings, but there are advantages to having standardized lists of geographic regions and industries:
+- Consistent style and spelling across profiles
+- Avoiding ambiguity
+- Ease of updating
+- Localization support e.g. when the site is transformed into other langauges
+- Better search
+
+Whether you store and ID or a text string is a question of duplication. When using and ID, the human-meaningful information is stored in only one place, and everything refers to it using an ID.
+
+The advantage of an ID is that because it has no meaning to humans, it never needs to change.
+
+Removing duplication is the key idea behind _normalization_ in databases.
 
 
-
- 
