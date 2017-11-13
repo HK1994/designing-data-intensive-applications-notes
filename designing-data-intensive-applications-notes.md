@@ -172,4 +172,60 @@ The advantage of an ID is that because it has no meaning to humans, it never nee
 
 Removing duplication is the key idea behind _normalization_ in databases.
 
+### Are Document Databases Repeating History?
+
+NoSQL reopened the debate on how best to represent many-to-many relationships in a database.
+
+IBM's Information Management System used a simple data model called the hierarchical mode, which has remarkable similarities to the JSON model of used by document data-bases. Like document databases, it worked well for one-to-many relatinships but made many-to-many difficult. 
+
+A relational table is simple a collection of tuples, and that's it. The query optimizer automatically decides which parts of the query to execute in which order, and which indexes to use.
+
+### Relational Versus Document Databases Today
+
+Document data model pros: schema flexibility, bettwe perfance due to locality and close to data structures used by the application.
+
+Relational data model pros: better support for joins, and many-to-one and many-to-many relationships.
+
+#### Which has simpler application code?
+
+If the data in your application has a document-like structure (tree of one-to-many relationships) then its a good idea to use a document model.
+
+Document model has limitations, you cannot refer directly to a nested item within a document. As long as documents are not too deeply nested, not usually a problem.
+
+Poor support for joins may or may not be a problemm. Many-to-many relationships may never be needed in an analytics applications that uses documents to record which events occurred at which time.
+
+It's possible to reduce the need for joins by denormalizing in a relational model, but then the application needs to do additional work to keep the normalized data consistent.
+
+It is not posssible to say in general which data model leads to simpler application code; it depends on the relationships that exist between data items. For highly connected data,  graph models are the most natural.
+
+#### Schema flexibility in the document model
+
+Most document dbs and JSON support in relational dbs do not enforce schema on the data.
+
+Document dbs are sometimes called _schemaless_, but that is misleading. The code usually assumes some kind of structure that is not enforced by the db. _Schema-on-read_ is more accurate, compared to _schema-on-write_ of relational dbs.
+
+_schema-on-read_ -> dynamic runtime type checking
+_schema-on-write_ -> status compile-time type checking
+
+Schema changes have a bad reputation of being slow and requiring downtime. MySQL the worst case.
+
+Schema-on-read approach is advantageous if the items don't all have the same structure. Many different types of objects, not practical to put each type in its own table. Strucutre is determined by external systems over which you have no control, and may change at anytime.
+
+Schemas useful mechanism for documenting and enforcing that structure.
+
+#### Data locality for queries
+
+Document is usuall stored as a single continuous string encoded as JSON, XML or BSON in Mongo.
+
+If application often needs to access the entire document there is a performance advantage to storage locality, having the data split across multiple table can take much longer.
+
+Locality advantage only applies if you need large parts of the document at the same time. DB typically needs to load the entire document even if you only access a small portion, wasteful in large documents.
+
+Locality not just present in the document model. Cassandra and Bigtable have column friendly properties to manage locality.
+
+#### Convergence of document and relational dbs
+
+RethinkDB supports relational-like joins in its query language.
+
+Document and reational dbs becoming more similar over time.
 
