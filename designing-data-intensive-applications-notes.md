@@ -229,3 +229,41 @@ RethinkDB supports relational-like joins in its query language.
 
 Document and reational dbs becoming more similar over time.
 
+## Chapter 3 - Storage and Retrieval
+
+How does a database store the data we give it, and does it find it again when asked.
+
+In order to tune a storage engine to perform well on your kind of workload, you need to have a rough idea of what the storage engine is doing under the hood.
+
+Big difference between storage engines optimized for transational workloads and those optimized for analytics.
+
+### Data Structures That Power Your Database
+
+Appending to a file is generally very efficient. Many database tables use a _log_, an append-only data file.
+
+Logs have terrible, O(n) performance. To speed this up, we need a different data structure: an _index_. Indexes are additional structures derived from the primary data.
+
+For writes, it's hard to beat the performance of appending to a file. Any kind of index slows down writes, because the index must be updated every time data is written.
+
+Often indexes make the application developer choose indexes, using you knowledge of the typical query patterns.
+
+### Hash Indexes
+
+Let's say our storage consists of appending to a file, and we want to create an index with a hash map.
+
+Create an index by maintaining an in-memory hash-map where every key is mapping to a byte offset in the data file. Though simplistic, this is how Bitcask works.
+
+This engine is well suited to situations where the value for each key is updated frequently. There are lots of writes, but not too many distinct keys.
+
+How do we eventually avoid running out of disk space? Compaction. Throwing away duplicate keys in the log, keeping only the most recent update.
+
+Other considerations? File format: binary preferred to csv, Deleting records, Crash recovery, Partially written records: checksums, Concurrency control.
+
+Append only logs seem wasteful at first, but append-only is good for a number of reasons:
+- Appending and segment merging are sequential operations, much faster than random writes.
+- Concurrency and crash recovery are much simpler if segment files are append-only or immutable.
+
+Hash table index also has limitations:
+- Hash table must fit in memory. Could maintain on disk but super painful and slow.
+- Range queries are not efficient, looking for sequences requires looking up every key.
+ 
