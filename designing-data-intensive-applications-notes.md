@@ -266,4 +266,15 @@ Append only logs seem wasteful at first, but append-only is good for a number of
 Hash table index also has limitations:
 - Hash table must fit in memory. Could maintain on disk but super painful and slow.
 - Range queries are not efficient, looking for sequences requires looking up every key.
- 
+
+### SSTables and LSM-Trees
+
+### B-Trees
+
+B-Trees are the standard index implementation in almost all relational databases, and many non-relational databases use them too.
+
+Like SSTables, B-Trees keep key-value pairs sorted by key, which allows efficient key-value lookups and range queries.
+
+B-Trees break the database down into fixed size _blocks_ or _pages_, traditionally 4kb in siz, and read or write one page at a time.
+
+Each page can be identified using an address or location, which allows one page to refer to another, similar to a pointer. 
