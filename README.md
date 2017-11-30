@@ -1,5 +1,33 @@
-# Designing Data Intensive Applications - Notes 
+# Designing Data Intensive Applications - Notes
+<!-- TOC depthFrom:1 depthTo:6 withLinks:1 updateOnSave:1 orderedList:0 -->
 
+- [Designing Data Intensive Applications - Notes](#designing-data-intensive-applications-notes)
+	- [Chapter 1 - Reliable, Scalable and Maintainable Applications](#chapter-1-reliable-scalable-and-maintainable-applications)
+		- [Reliability](#reliability)
+		- [Scalability](#scalability)
+			- [Approaches for Coping with Load](#approaches-for-coping-with-load)
+		- [Maintainability](#maintainability)
+			- [Operability](#operability)
+			- [Simplicity](#simplicity)
+			- [Evolvability](#evolvability)
+	- [Chapter 2 - Data Models and Query Languages](#chapter-2-data-models-and-query-languages)
+		- [Relational Model vs Document Model](#relational-model-vs-document-model)
+		- [The Birth of NoSQL](#the-birth-of-nosql)
+		- [The Object-Relational Mismatch](#the-object-relational-mismatch)
+		- [Many-to-One and Many-to-Many Relationships](#many-to-one-and-many-to-many-relationships)
+		- [Are Document Databases Repeating History?](#are-document-databases-repeating-history)
+		- [Relational Versus Document Databases Today](#relational-versus-document-databases-today)
+			- [Which has simpler application code?](#which-has-simpler-application-code)
+			- [Schema flexibility in the document model](#schema-flexibility-in-the-document-model)
+			- [Data locality for queries](#data-locality-for-queries)
+			- [Convergence of document and relational dbs](#convergence-of-document-and-relational-dbs)
+	- [Chapter 3 - Storage and Retrieval](#chapter-3-storage-and-retrieval)
+		- [Data Structures That Power Your Database](#data-structures-that-power-your-database)
+		- [Hash Indexes](#hash-indexes)
+		- [SSTables and LSM-Trees](#sstables-and-lsm-trees)
+		- [B-Trees](#b-trees)
+
+<!-- /TOC -->
 ## Chapter 1 - Reliable, Scalable and Maintainable Applications
 
 Many factors influence the design of a system including:
@@ -176,7 +204,7 @@ Removing duplication is the key idea behind _normalization_ in databases.
 
 NoSQL reopened the debate on how best to represent many-to-many relationships in a database.
 
-IBM's Information Management System used a simple data model called the hierarchical mode, which has remarkable similarities to the JSON model of used by document data-bases. Like document databases, it worked well for one-to-many relatinships but made many-to-many difficult. 
+IBM's Information Management System used a simple data model called the hierarchical mode, which has remarkable similarities to the JSON model of used by document data-bases. Like document databases, it worked well for one-to-many relatinships but made many-to-many difficult.
 
 A relational table is simple a collection of tuples, and that's it. The query optimizer automatically decides which parts of the query to execute in which order, and which indexes to use.
 
@@ -277,4 +305,4 @@ Like SSTables, B-Trees keep key-value pairs sorted by key, which allows efficien
 
 B-Trees break the database down into fixed size _blocks_ or _pages_, traditionally 4kb in siz, and read or write one page at a time.
 
-Each page can be identified using an address or location, which allows one page to refer to another, similar to a pointer. 
+Each page can be identified using an address or location, which allows one page to refer to another, similar to a pointer.
