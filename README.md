@@ -23,9 +23,13 @@
 			- [Convergence of document and relational dbs](#convergence-of-document-and-relational-dbs)
 	- [Chapter 3 - Storage and Retrieval](#chapter-3-storage-and-retrieval)
 		- [Data Structures That Power Your Database](#data-structures-that-power-your-database)
-		- [Hash Indexes](#hash-indexes)
-		- [SSTables and LSM-Trees](#sstables-and-lsm-trees)
-		- [B-Trees](#b-trees)
+			- [Hash Indexes](#hash-indexes)
+			- [SSTables and LSM-Trees](#sstables-and-lsm-trees)
+			- [B-Trees](#b-trees)
+			- [Keeping everything in memory](#keeping-everything-in-memory)
+		- [Transaction Processing or Analytics?](#transaction-processing-or-analytics)
+			- [Data Warehousing](#data-warehousing)
+		- [Stars and Snowflakes: Schemas for Analytics](#stars-and-snowflakes-schemas-for-analytics)
 
 <!-- /TOC -->
 ## Chapter 1 - Reliable, Scalable and Maintainable Applications
@@ -275,7 +279,7 @@ For writes, it's hard to beat the performance of appending to a file. Any kind o
 
 Often indexes make the application developer choose indexes, using you knowledge of the typical query patterns.
 
-### Hash Indexes
+#### Hash Indexes
 
 Let's say our storage consists of appending to a file, and we want to create an index with a hash map.
 
@@ -295,9 +299,9 @@ Hash table index also has limitations:
 - Hash table must fit in memory. Could maintain on disk but super painful and slow.
 - Range queries are not efficient, looking for sequences requires looking up every key.
 
-### SSTables and LSM-Trees
+#### SSTables and LSM-Trees
 
-### B-Trees
+#### B-Trees
 
 B-Trees are the standard index implementation in almost all relational databases, and many non-relational databases use them too.
 
@@ -306,3 +310,45 @@ Like SSTables, B-Trees keep key-value pairs sorted by key, which allows efficien
 B-Trees break the database down into fixed size _blocks_ or _pages_, traditionally 4kb in siz, and read or write one page at a time.
 
 Each page can be identified using an address or location, which allows one page to refer to another, similar to a pointer.
+
+The algorithm ensures that the tree remains _balanced_, n keys always has depth O(log n).
+
+To make databases reliant to crashes, it is common for B-tree implementations to include _write ahead logs (WAL)_. Append-only file to which every B-Tree modification must be written before being applied to tree itself.
+
+#### Keeping everything in memory
+
+As RAM becomes cheaper, the cost-per-GB argument is eroded. Many datasets are simply not that big so it is feasible to keep everything in memory.
+
+Memcached is an in-memory key-value store intended for caching use only, where it is ok for data to be lost if a machine is restarted.
+
+When an in-memory DB is restarted, needs to reload state either from disk or over the network. Disk is merely used as an append-only log for durability and all reads are served entirely from memory.
+
+Performance advantage of in-memory DB is not because they don't need to read from disk. Faster because they avoid the overheads of encoding in-memory data structures in a form that can be written from disk.
+
+In-memory DBs can provide data models that are difficult to implement with disk-based indexes.
+
+Research indicates in-memory DB can support datasets larger than RAM through _anti-caching_, evicting least recently used data to disk, and loading it back again when required. Analogous to operating systems swapping virtual memory in pages.
+
+### Transaction Processing or Analytics?
+
+Online transaction processing (OLTP).
+
+Data analytics has very different _access patterns_ to transactional processing. Scans huge number of records, and calculates aggregate statistics, rather than returning raw data.
+
+Property | OLTP | OLAP
+--- | --- | ---
+Read pattern | Small number of records per query, fetched by key | Aggregate over large number of records
+Write pattern | Random-access low latency writes from user input | Bulk import (ETL) or event stream
+Primary user | End-user / customer via web application | Internal analyst, for decision support
+What data represents | Latest state of data | History of events over time
+Size | GB/TB | TB/PB
+
+#### Data Warehousing
+
+OLTP systems expected to be highly available and low latency, critical to business operation. DBAs reluctant to let analysts run large ad hoc queries on OLTP DB.
+
+_Data warehouse_ is a separate DB that analysts can query without affecting OLTP operations. Optimised for analytic access patterns.
+
+On the surface, data warehouse and relational OLTP DB can look very similar (SQL interface), but the internals can be very different.
+
+### Stars and Snowflakes: Schemas for Analytics
