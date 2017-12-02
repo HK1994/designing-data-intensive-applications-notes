@@ -30,6 +30,10 @@
 		- [Transaction Processing or Analytics?](#transaction-processing-or-analytics)
 			- [Data Warehousing](#data-warehousing)
 		- [Stars and Snowflakes: Schemas for Analytics](#stars-and-snowflakes-schemas-for-analytics)
+		- [Column-Orientated Storage](#column-orientated-storage)
+			- [Column Compression](#column-compression)
+		- [Writing to Column-Orientated storage](#writing-to-column-orientated-storage)
+	- [Chapter 4 - Encoding and Evolution](#chapter-4-encoding-and-evolution)
 
 <!-- /TOC -->
 ## Chapter 1 - Reliable, Scalable and Maintainable Applications
@@ -352,3 +356,35 @@ _Data warehouse_ is a separate DB that analysts can query without affecting OLTP
 On the surface, data warehouse and relational OLTP DB can look very similar (SQL interface), but the internals can be very different.
 
 ### Stars and Snowflakes: Schemas for Analytics
+
+Data warehouses are used in a formulaic style know as a _star schema_.
+
+Centre of the schema is the _fact table_, which represents an event that occurred at a particular time e.g. customer's purchase of a product, or click by a user.
+
+TODO: p94 Example of a star schema image
+
+### Column-Orientated Storage
+
+If you have trillions of rows and petabytes of data in your fact tables, storing and querying them efficiently becomes challenging.
+
+OLTP DBs and Document DBs are laid out in a similar fashion, each row or document is stored as one contiguous sequence of bytes.
+
+Column orientated storage is simple, store all the values from each column together instead. Then you only need to read and parse thhose columns that are used in that query.
+
+#### Column Compression
+
+Column orientated storage leads itself well to compression.
+
+_Bitmap encoding_ is particularly effective in data warehouses.\
+
+### Writing to Column-Orientated storage
+
+Column-orientated storage makes sense in analytical settings as the load consists of large read-only queries. However, they have the downside of making writes more difficult.
+
+Update in place approach like B-Trees is not possible with compresed columns. Most likely have to write all the column files if you wanted to insert a row in the middle of a sorted table.
+
+LSM Trees are a good solution. When enough writes have accumulated in memory, they are combined with an existing column files on disk and written to new files in bulk.
+
+_Data cube_ is a common special case of a materialized view, it is s grid of aggregates grouped 	by different dimensions.
+
+## Chapter 4 - Encoding and Evolution
