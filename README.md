@@ -388,3 +388,30 @@ LSM Trees are a good solution. When enough writes have accumulated in memory, th
 _Data cube_ is a common special case of a materialized view, it is s grid of aggregates grouped 	by different dimensions.
 
 ## Chapter 4 - Encoding and Evolution
+
+Chapter 1 introduced the idea of _evolvability_: we should aim to build systems that make it easy to adapt to change.
+
+Relational schemas assume all data conforms to one schema, which can be changed. Schema-on-read (document) databases don't enforce a schema and can contain a mixture of older and newer format.
+
+When formats change, this normally requires a corresponding change in the application code. In large applications, this cannot usually happen instantaneously:
+- Server side application, you may want to perform a _rolling upgrade_, deployign to a few nodes at a time, checking that things are running smoothly.
+- Client side you are at the mercy of the user.
+
+New and old version of the code may potentially co-exist at once. For this to work, we need to maintain copatibility in both directions:
+- _Backward compatibility_: Newer code can read data written by older code. Not hard to achieve as you know the format of data.
+- _Forward compatibility_: Older code can read data written by newer code. Harder to achieve, requries older code to ignore addition made by newer version.
+
+### Formats for Encoding Data
+
+Programs usually work with two different representations:
+- In memory, data is kept in objects, structs, lists arrays etc. Optimised for efficient acces and manipulation by the CPU.
+- When you want to store or send it over the network, you have to encode it as some kind of self-contained sequence of bytes (e.g. JSON).
+
+Translating between representations is called _encoding_, _serialization_ or _marshalling_; and the reverse is called _decoding_, _parsing_, _deserialization_ or _unmarshalling_.
+
+#### Language-specific Formats
+
+Languages come with built-in support for encoding in-memory objects. Python has pickle etc. However, these have deep problems:
+- Encoding is tied to a programming language. If you store or transmit the data, you are committing yourself to your programming language for a long time. 
+
+
