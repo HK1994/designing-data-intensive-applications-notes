@@ -412,6 +412,115 @@ Translating between representations is called _encoding_, _serialization_ or _ma
 #### Language-specific Formats
 
 Languages come with built-in support for encoding in-memory objects. Python has pickle etc. However, these have deep problems:
-- Encoding is tied to a programming language. If you store or transmit the data, you are committing yourself to your programming language for a long time. 
+- Encoding is tied to a programming language. If you store or transmit the data, you are committing yourself to your programming language for a long time.
+
+### Modes of Dataflow
+
+#### Dataflow Through databases
+
+The process that writes to the database encodes the data and the process that reads from the database decodes it.
+
+Common for several different processes to be accessing a database at the same time. In this environment it is likley that some processes accessing the database will be running newer code, and some older.
+
+Encoding formats can support preservation of unknown fields, but you need to take care at an application level.
+
+##### Different values written at different times
+
+Databases generally let you update any value at any time. You may entirely replace the old application with a new version, but the underlying data is still years old.
+
+_data outlives code_
+
+Migrating data to a new schema is certainly possible, though expensive to do on a large dataset. Most databases allow simple schema changes like adding a column, and fills NULL values in those that are missing.
+
+LinkedIn's document database Espresso uses Avro for storage, allowing it to use Avro's schema evolution rules.
+
+#### Dataflow Through Services: REST and RPC
+
+When you need to communicate across a network, the most common arrangement has two roles: _client_ and _server_.
+
+Web browsers are a type of client, and make AJAX requests to the service. Although HTTP is used as the transport protocol, the API implementation on top is application-specific, and the client and server need to agree on the details of the API.
+
+The server itself is likely a client to another service. This approach is used to decompose a larger application into smaller services: _micro-services architecture_.
+
+Key design goal of a micro-service architecture is to make the application easier to upgrade and maintain by making services independently deployable and evolvable. Expect older and newer versions to be running at the same time.
 
 
+##### Web Services
+
+Two popular approaches to web services: REST and SOAP.
+
+REST is a design philosophy, not a protocol. Emphasises simple data formats, using URLs for identifying resources and HTTP features for cache control, authentication, and content type negotiation.
+
+SOAP is an XML-based protocl for making network API requests. Deliberately independent from HTTP, and avoids using HTTP features.
+
+SOAP API is described using an XML-based language called Web Services Description Language or WSDL. WSDL is not human readable, and users rely heavily on tool support, code generation, and IDEs.
+
+##### The problems with remote procedure calls (RPCs)
+
+Web services are merely the latest incarnation of technologies to make API requests across a network, many of which have serious problems.
+
+Variants on the idea of a _remote proceedure call_ (RPC). RPC model tries to make a request to a remote network service look the same as calling a function, within the same process (location transparency). Although it appears convenient at first, the approach is fundamentally flawed.
+
+Network request is very different from a local function call:
+- Local function call is predictable and either succeeds or fails, depending on parameters under your control. Network request is unpredictable: request or response may be lost, remote machine may be slow or unavailable.
+
+- Local function call either returns a result, or throws and exception, or never returns. A network request has an additional state, it may return without a result due to a _timeout_, meaning you don't know what happened.
+
+- If you retry a failed network request, it could be that the requests are getting through but the results are getting lost. Retrying will case the action to be performed multiple times, unless you build a system for deduplication (idempotence).
+
+- Local function calls take roughly the same time to execute, network calls are much slower and wildly variable
+
+- Local function calls can take pointers to local memory addresses. When making a network request, the params need to be encoded into a byte sequence. Quickly becomes problematic with larger complex objects.
+
+- Client and service likely to be implemented in different programming languages, so the RPC framework must translate datatypes. This can be ugly, since not all languages have the same types.
+
+No point trying to make a remote service look too much like a local object in your programming language, as it is fundamentally different.
+
+##### Current directions of RPC
+
+RPC still proves popular today, new frameworks have been built on encodings mentioned above. Thrift and Avro have RPC support, gRPC is an RPC implementation on protobufs, Finagle uses Thrift, and Rest.li uses JSON over HTTP.
+
+New generation of RPC frameworks are more explicit about the network request layer.
+
+gRPC supports streams, where one call does not necessarily return one response, but a series of responses over time.
+
+Frameworks also support _service discovery_, allowing a client to find out which IP address and port number they can find a service.
+
+Custom RPC protocols with binary encoding can achieve better performance than something generic like JSON over REST. However, RESTful APIs are great for experimentation and debugging.
+
+##### Data encoding and evolution of RPC
+
+For evolvability, it is important that RPC clients and servers can be changed independently.
+
+We can make the resonable assumption that all the servers will be updated first, and the client second. Thus you only need backward compatibility on requests and forward compatibility on responses.
+
+Service compatibility made harder by the fact that RPC often used for communication across organizational boundaries, so the provider of a service has no control over its clients and cannot force them to upgrade.
+
+Thus, compatibility often needs to be maintained for a long time.
+
+#### Message-Passing Dataflow
+
+_Asynchronous message-passing systems_ are somewhere between RPC and databases. The message is not sent via a direct network connection, but goes via an intermediary called a _message broker_ / _message queue_ / _message-orientated middleware_ which stores the message temporarily.
+
+Advantages compared to direct RPC:
+- Can act as a buffer if the recipient is unavailable or overloaded, and thus can improve reliability.
+- Automatically re-delivers messages to a process that has crashed, and prevents messages from getting lost.
+- Avoids the sender needing to know the IP address and port numver of the recipient.
+- One message can be sent to several recipients.
+- Logically decouples the sender from recipient.
+
+Message-passing communication is usually one-way: sender normally doesn't expect to receive a reply, responses are done via a seperate channel.
+
+##### Message brokers
+
+Open source implementations include: RabbitMQ & Apache Kafka.
+
+In general, the process is: one process sends a message to a named _queue_ or _topic_, and the broker ensures that the message is delivered to one or more _consumers_ / _subscribers_ to that queue or topic. Many to many relationship.
+
+##### Distributed actor frameworks
+
+The _actor_ model is a programming model for concurrency is a single process. Rather than dealing with threads directly (race conditions, deadlock, locking), logic is encapsulated in _actors_. Each actor represents one client or entity, and communicates with other actors by sending and receiving messages.
+
+In _distributed actor frameworks_ this model is used to scale applications across multiple nodes. Location transparency (?) works better in the actor model than in RPC, as the actor model assumes that messages will be lost, even within a single process.
+
+Akka, Orleans Erlang OTP are all _distributed actor frameworks_.
