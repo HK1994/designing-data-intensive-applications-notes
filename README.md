@@ -1,4 +1,4 @@
-# Designing Data Intensive Applications - Notes
+<!-- # Designing Data Intensive Applications - Notes -->
 <!-- TOC depthFrom:1 depthTo:6 withLinks:1 updateOnSave:1 orderedList:0 -->
 
 - [Designing Data Intensive Applications - Notes](#designing-data-intensive-applications-notes)
@@ -413,6 +413,67 @@ Translating between representations is called _encoding_, _serialization_ or _ma
 
 Languages come with built-in support for encoding in-memory objects. Python has pickle etc. However, these have deep problems:
 - Encoding is tied to a programming language. If you store or transmit the data, you are committing yourself to your programming language for a long time.
+- In order to restore data in the same types, the decoder must be able to instantiate arbitary classes - big security risk.
+- Efficiency, time taken to encode & decode is notoriously bad.
+
+Only use language's built-in encoding for transient purposes.
+
+#### JSON, XML & Binary Variants
+
+JSON, XML & CSV are textual formats, and thus relatively human-readable. But they also have problems...
+- Ambiguity around the encoding of numbers. XML and CSV cannot distinguish between number and string. JSON does not distinguish ints and floats, or precision. Big problem when dealing with large numbers (>2^53).  
+- JSON and XML have good support for unicode, but not for binary strings.
+- Optional schema support for XML and JSON. These are powerful but complicated languages. Many JSON based tools don't bother using schemas.
+- CSV has no schema, up to the application to define the meaning of each row and column. If an applicaiton change adds a new row or column, you have to handle manually.
+
+These three are good enough for many purposes. As long as people agree on the format, it doesn't matter how pretty or efficient the format is. The difficulty of getting different organisation to agree on anything outweighs most other concerns.
+
+##### Binary encoding
+
+For internal data, there is less pressure to use 'lowest-common-denominator' encoding format. Can choose format that is more compact or fast to parse. Negligible gains in small data sets, but big impact in the terabytes.
+
+JSON and XML use a lot of space compared to binary formats. This led to Binary JSON encodings (MessagePack, BSON, BISON) etc.
+
+#### Thrift and Protocol Buffers
+
+Both Thrift and Protobufs require a schema for any data that is encoded, described like...
+
+```
+message Person {
+	required string user_name = 1;
+	optional int64 favourite_number = 2;
+	repeated string interests = 3;
+}
+```
+
+Both come with a code generation tool that takes a definition, and produces classes that implement the schema in various languages. Your application code uses these to encode or decode records of the schema.
+
+No field names, instead the encoded data uses _field tag_ integers used as an alias.
+
+##### Field tags and schema Evolution
+
+How do Thrift and Protocol Buffers handle schema changes while keeping forward and backward compatibility?
+
+Each field is identified by its tag number, and annotated with its data type. If a field value is not set then it is omitted from the encoded record. Field tags are essential to the meaning of the encoded data. You can change the name of a field, but not a field's tag as that would make all existing encoded data invalid. You can add new fields to the schema, provided you give each field a new tag number.
+
+This maintains forward compatibility, old code can read records written by new code.
+
+As long as each field has a unique tag number, new code can always read old data, as the tag numbers will have the same meaning.
+
+#### Avro
+
+Apache Avro is another binary encoding format, started in 2009 by Hadoop.
+
+### The Merits of Schemas
+Schema languages are much simpler than XML Schema or JSON Schema. Protobufs,  Thrift and Avro have grown to support a fairly wide range of programming languages.
+
+Many data systems also implement some kind of proprietary binary encoding. Most relational databases have a network protocol (sql:// ?) over which you can send queries to the database and get responses.
+
+Although textual data formats are widespread, binary encodings based on schemas are a viable option. They have some nice properties:
+- More compact than various 'BSON' variants since they can omit field names from the encoded data.
+- Schema is a valuable form of documentation. Manually maintained documentation can easily diverge from reality.
+- Database of schemas lets you check forward and backward compatibility before deployment.
+- For statically typed languages, the generate code from schemas is useful since it allows type checking at compile time.
 
 ### Modes of Dataflow
 
