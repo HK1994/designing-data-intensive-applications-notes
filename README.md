@@ -585,3 +585,144 @@ The _actor_ model is a programming model for concurrency is a single process. Ra
 In _distributed actor frameworks_ this model is used to scale applications across multiple nodes. Location transparency (?) works better in the actor model than in RPC, as the actor model assumes that messages will be lost, even within a single process.
 
 Akka, Orleans Erlang OTP are all _distributed actor frameworks_.
+
+## Chapter 5 - Replication
+
+_Replication_ means keeing a copy of the same data on multiple machines. Why do this?
+* Keep data geographicaly close to users and reduce latency.
+* Allow the system to continue even if parts have failed, increasing availability.
+* Scale the number of machines that can serve read queries, increase read throughput.
+
+If the data you are replicating does not change over time, replication is easy, copy the data to every node. The difficulty lies in handling _changes_ to replicated data.
+
+Three popular algorithms for replicating changes between nodes: single-leader, multi-leader & leaderless applications.
+
+Many trade-offs to consider with replication:
+* Synchronous or Asynchronous replication?
+* How to handle failed replicas?
+
+### Leaders and Followers
+
+Each node that stores a copy of the database is called a _replica_. How do we ensure that all the data ends up on all the replicas?
+
+Every write must be processed by every replica. Most common solution is _leader-based replication_ (aka active/passive or master-slave replication).
+
+1. One replica is designated as the leader. Clients must send requests to the leader, which writes data to its local storage.
+2. Leader then sends the data change to the _followers_ as part of a _replication log_ or _change stream_. Applies changes in same order as the leader.
+3. Clients can then query any node with read. Writes are only accepted by the leader.
+
+This mode of replication is a built-in features of many relational databases.
+
+#### Synchronous Versus Asynchronous Replication
+
+The user updates their profile image. The client sends the update request to the leader; at some point the leader then forwards the change to the followers. Eventually the leader notifies the client the update was successful.
+
+##### Synchronous
+The leader waits for confirmation from followers before notifying client.
+
+Databases are usually quick, but there is not guarantee of how long it might take for followers to apply the update.
+
+*Pro*: Follower is guaranteed to have an up-to-date copy of the data that is consistent with the leader.
+*Con*: If follower does not respond, the write cannot be processed and leader must block all writes and wait until the replica is available again.
+
+Impractical for all followers to be synchronous, in practice usually one is synchronous. If it becomes unresponsive, an asynchronous follower then becomes synchronous. This is called _semi-synchronous_ replication.
+
+##### Asynchronous
+The leaders send the data change but does not wait for confirmation before notifying the client.
+
+There are circumstances where followers can fall far behind the leader by several minutes, if recovering from a failure, networking issues.
+
+*Pro*: Leaders can continue processing writes even if all of the followers have fallen behind.
+*Con*: If the leader fails and is not recoverable, any writes that have not yet been replicated to followers are lost. Writes are not guaranteed to be durable even if confirmed to the client.
+
+#### Setting Up New Followers
+
+Often need to set up new followers to - increase nubmer of replcias, replace failed nodes etc. How to ensure new follower has an accurate copy of leader's data?
+
+Copying data files from one node to another is not sufficient: client are constantly writing to the database, and the data is always in flux. Could lock the DB, making files unavailable, but goes against high-availability.
+
+The process is:
+1. Take a consistent snapshot of the leader's database at somepoint in time, without taking a lock on the entire database.
+2. Copy snapshot to follower.
+3. Follower connects to leader and requests all changes since snapshot.
+4. When follower is caught up, it can continue to process data changes from the leader as they happen.
+
+#### Handling Node Outages
+
+Any node can go down - fault, planned maintenance etc. Being able to reboot nodes without downtime is a big advantage for operations and maintenance.
+
+Goal is to keep the system as a whole running despite individual node failures, and to keep the impact of node outage as small as possible.
+
+How to achieve high availability with leader-based replication?
+
+##### Follower failure: Catch-up recovery
+Each follower keeps log of data changes received from the leader.
+
+In the case of a fault, the follower can recover quite easily: knows the last transaction processed before failure from its log. Therefore can request all data changes that occurred since the failure.
+
+##### Leader failure: Failover
+
+Leader failure is trickier, things that need to happen:
+* One of the followers needs to be promoted to be the new leader.
+* Clients need to be reconfigured to send their writes to the new leader.
+* Followers need to start consuming data changes from the new leader.
+
+Automatic failover usually consists of the following steps:
+1. *Determine that the leader has failed.* Nodes often chatter to determine what has gone wrong, use timeouts to assume a node is dead.
+2. *Choose a new leader.* Could be done through election, or a new leader could be appointed by a _controller node_. The best candidate is that with the most up-to-date data changes from the old leader (minimize data loss).
+3. *Reconfigure the system to use the new leader.* Clients now need to send write requests to the new leader. System needs to ensure that the old leader becomes a follower and recognises the new leader.
+
+Failover is fraught with things that can go wrong:
+* If asynchronous, the new leader may not have received all of the writes from the old leader before it failed. If the former leader rejoins, what happens to the writes? Commonly, they are discarded, violating client's durability expectations.
+* Discarding writes is especially dangerous, if other storage systems outside the database need to be coordinated with the contents.
+* In certain fault scenarios, it could happen that two nodes believe they are leaders, _split brain_ situation. If both accept writes, and there is no process to resolve conflicts, data is likely to be lost or corrupted.
+* What is the right timeout before the leader is declared dead? Longer timeout means longer time to recovery, if the timeout is too short, there could be unnecessary failovers. Temporary load spike could raise response time above threshold, an unnecessary failover would make the situation worse not better.
+
+These issues of node failures; unreliable networks; and trade-offs around replica consistency, durability, availability, and latency are fundamental problems in distributed systems.
+
+#### Implementation of Replication Logs
+
+How does leader-based replication work under the hood? Several different methods...
+
+##### Statement-based replication
+Leader logs write every write request (statement) that it executes and sends that statement log to followers. Leader sends all INSERT, UPDATE or DELETE statements to followers and follower parses and executes SQL statment as if it had been received from a client.
+
+Problems with this approach...
+* Any statement with nondeterministic function like `NOW()` or `RAND()` will generate different value on each replica.
+* If statements use autoincrementing column, or depend on the existing data in the database, they *must* be executed in exactly the same order on each relpica. Limiting when there are multiple concurrently executing transactions.
+* Statements with side-effects (triggers, stored procs, user-defined functions) may result in different side effects on each replica.
+
+Possible to work around those issues, however because there are so many edge cases, other replication methods are preferred.
+
+##### Write-ahead log (WAL) shipping
+
+Formats most storage engines, every write is appended to a log:
+* Log structured storage engine, the log is the main place for storage.
+* B-Tree, which overwrites individual blocks, every modification is first written to a write-ahead log so that the index can be restored to a consistent state after a crash.
+
+Log is an append-only sequence of bytes containing all writes to the database. Can use the exact same log to build a replica on another node.
+
+When the follower processes the log, it builds an exact copy of the exact same data structure as found on the leader.
+
+*Con*: Log describes data on a very low level. WAL contains details of which bytes were changed in which disk blocks. Therefore replication is closely coupled to the storage engine. If the DB changes the storage format, not typically posible to run different versions of the database software on the leader and followers.
+
+Can have big operational impact. If the replication protocol allows the follower to use a newer software version than the leader, you can perform a zero-downtime upgrade of the software. If the replication protocol does not allow this version mismatch, as often happens with WAL, upgrades require downtime.
+
+##### Logical (row-based) log replciation
+
+Use different log formats for replication and storage engine. Allows replication log to be decoupled from the storage engine internals. This is a _logical log_, distinguished from the physical data representation.
+
+Logical log for relational DB is a sequence of records describing write to tables:
+* Inserted row: log contains new values of all columns.
+* Deleted row: contains info to identify the deleted log, typically PK.
+* Updated row: identify update row & contains new values of columns.
+
+Can more easily be kept backward compatible, allowing leader and follower to run different versions of the software. Easier for external applications to parse.
+
+##### Trigger-based replication
+
+If you need more flexibility, i.e. only want to replicate subset of the data, then you may need to move the replication up to the application layer.
+
+_Triggers_ let you register custom application code that is automatically executed when a data change occurs in a database system. Trigger then logs this change into a seperate table, which can then be read by an external process.
+
+### Problems with Replication Lag
