@@ -1,4 +1,4 @@
-<!-- # Designing Data Intensive Applications - Notes -->
+# Designing Data Intensive Applications - Notes
 <!-- TOC depthFrom:1 depthTo:6 withLinks:1 updateOnSave:1 orderedList:0 -->
 
 - [Designing Data Intensive Applications - Notes](#designing-data-intensive-applications-notes)
@@ -726,3 +726,103 @@ If you need more flexibility, i.e. only want to replicate subset of the data, th
 _Triggers_ let you register custom application code that is automatically executed when a data change occurs in a database system. Trigger then logs this change into a seperate table, which can then be read by an external process.
 
 ### Problems with Replication Lag
+
+Reasons for wanting replication: tolerate node failures, scalability (processing more requests), latency.
+
+Leader-based replication requires all writes to go through single node, but reads can go to any replica. For common web workload of mostly reads, only a few writes, this is an attractive option. Create many followers and distributes read requests across them.
+
+This read-scaling architecture, increase read requests by adding followers. Only realistically works with async replication. If sync, one node outage could bring entire system unavailable for writing.
+
+If you read from an asynchronous follower, you might see outdated information - not all writes replicated in the follower. Eventual consistency.
+
+_replication lag_ is the time for a read on the leader reflected in the follower. In practice, could be a fraction of a second, but if the system is operating near capacity, or problem in the network, lag can be seconds on even minutes.
+
+Three examples likely to occur when there is replication lag...
+
+#### Reading Your Own writes
+
+Many applicaitons let the user submit some data, then view submission.
+
+New data sent to leader for write, but can be read from a follower.
+
+With async replication, if the user views the dat shortly after making a wirte, the new data may not yet have reached the replica. Appears as if the user has lost their data.
+
+This situation requires _read-ater-write consistency_, also known as _read-your-writes consistency_. Guarantees that they will always see any updates they submitted themselves.
+
+How to implement read-after-write consistency with leader-based replication? Few solutions...
+
+* When reading something a user modified, read it from the leader. Requires knowing wether something has been modified without actually querying it. For example - profile information on social network, not editable by anyone else, thus only read from the leader.
+
+* If most things in the application are editable, this approach will not work as most reads will go to the leader. One could track the time of the last update and, only read from the leader for a minute. Could also monitor the replication lag on followers and prevent queries on followers more than a minute behind the leader.
+
+* The client can remember timestamp of its most recent write - then the system can ensure the replica serving reads reflects updates at least until the timestamp. if replica not up-to-date, handle by another replica or wait until replica has caught up.
+
+* Additional complexity if replicas are distributed across data centers. Any request needs to be routed to data centre that contains the leader.
+
+If user is accessing service from multiple devices then it becomes more complicated. Might want to provide _cross-device_ read-after-write consistency: data updates should be relfected across devices.
+
+In this case there are additional issues to consider...
+
+* Approaches that require a timestamp become more difficult, as one device does not have the information of another.
+
+* If multiple data centres - no guarantee devices' requests are routed to the same one.
+
+#### Monotonic Reads
+
+Second example is that when reading async, it is possible to see things _moving backward in time_.
+
+When user makes the same query to two different replicas, and one is lagging behind the other. The second returns the state of the system earlier in time.
+
+_Monontonic reads_ is a guarantee that this kind of anomoly does not happen. Lesser guarantee than strong consistency, but a stronger guarantee than eventual consistency. Monotonic reads means that if a user makes several reads in sequence, they will not read older data after having previously read newer data.
+
+One solution is to ensure the user always reads from the same replica i.e. take hash of user ID and route there rather than randomly.
+
+#### Consistent Prefix Reads
+
+If some partitions are replicated slower than others, a reader may observe that answer occurred before the question.
+
+_Consistent prefix reads_ guarantees that if a sequence of writes happens in a specific order, then anyone reading those writes will see them appear in the same order.
+
+This is a particularly acute problem in partitioned databases.
+
+If the DB always applies writes in the same order, reads always see a consistent prefix, so this anomaly cannot happen. However, if many distributed databases different partitions operate independently so there is no global ordering of writes.
+
+One solution is to ensure that any writes related to one another are written to the same partition - but this cannot be done efficiently in some applications.
+
+#### Solutions for Replication Lag
+
+When working with an eventually consistent system, worth thinking about how the application behaves if replication lag increases to several minutes or even hours. Important to design the system to provide stronger guarantees (e.g. read-after-write) if it is a problem.
+
+Ideally, application developers don't have to worry about subtle replication issues, and trust DBs to do the 'right' thing. this is why _transactions_ exist.
+
+### Multi-Leader Replication
+
+Leader-base replication has one big down-side. If the leader is unavailable, you can't write to the database.
+
+#### Use Cases for Multi-Leader Replication
+
+Rarely makes sense to use a multi-leader setup within a single data center, as the benefits don't outweigh the complexity.
+
+##### Multi-data center operation
+
+Able to tolerate the failure of an entire data center, or to be closer to your users. can have leader in _each_ data center. Within each data center, regular leader-follower replication is used; between datacenters, each leader replicates its changes to leaders in other datacenters.
+
+How does single-leader vs multi-leader fare in multi-data center deployment?
+
+* Performance. Single-leader configuration every write must go to other data center with the leader, which can add significant latency for writes. Multi-leader config, every write can be processed in the local data center and is replicated asynchronoously to the other data centers. Therefore inter-data center network delay is hidden.
+
+* Tolerance of data center outages. If data center fails with a single-leader config, failover can promote a follower in another data center to be leader. In multi-leader config, each data center can continue operating independently of the others and replication catces up when the failed center comes back online.
+
+* Tolerance of network problems. Single-leader config is very sensistive to problems in the network between data centers. Multi-leader replication with async replication can usually tolerate problems better: temporary network interruption does not prevent write being processed.
+
+Multi-leader has a big downside - the same data may be concurrently modified in two data centers, which must be resolved.
+
+There are often subtle pitfalls in multi-leader replication - autoincrementing keys, triggers, integrity constraints. Multi-leader often considered dangers and avoided where possible.
+
+##### Client with offline operation
+
+Consider calendar app on your phone, you need to be able to make read requests, and make write requests even when offline. Any changes need to be synced when you come online.
+
+In this case, every device has a local leader (accepts writes), and there is an async multi-leader replication process between replicas of calendar devices. Replication lag can by hours or even days.
+
+Architecturally, this is the same as multi-leader replication between data centers, taken to the extreme.
