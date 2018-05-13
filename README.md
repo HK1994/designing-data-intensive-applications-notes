@@ -826,3 +826,132 @@ Consider calendar app on your phone, you need to be able to make read requests, 
 In this case, every device has a local leader (accepts writes), and there is an async multi-leader replication process between replicas of calendar devices. Replication lag can by hours or even days.
 
 Architecturally, this is the same as multi-leader replication between data centers, taken to the extreme.
+
+##### Collaborative Editing
+
+Real-time collaborative editing (GDocs) is a database replication problem, similar to the offline case above. When one user edits their local replica, they are asynchronously replicated to the server and other users using the document.
+
+To guarantee no editing conflicts, app must get lock on doucument before a user edits. Others users must wait until the lock is released before editing. Equivalent to single-leader replication with transactions on the leader.
+
+For faster collaboration, you can make the unit of change very small (e.g. single key stroke) and avoid locking. This allows multiple users to edit simultaneously, but also brings the challenges of multi-leader replication, including conflict resolution.
+
+#### Handling Write Conflicts
+
+Biggest problem with multi-leader replication is that write conflicts can occur, which means conflict resolution is required.
+
+Example: Two users update title of wikipedia page, each change is successsfully applied to the local leader. however, conflict is deteted when the change is replicated async. Cannot occur in single-leader database.
+
+##### Synchronous versus Asynchronous conflict detection
+
+Single-leader DB - the second writer will either block and wait for the first write to complete, or abort the second write transaction, forcing the user to retry.
+
+In multi-leader DB - both writes are successful, and conflict only detected async when it is too late to ask the user to resolve the conflict.
+
+Conflcit detection could be synchronous - i.e. wait for write to be replicated before telling user it was successful. This looses the main advantage of multi-leader replication that is allowing each replica to accept writes independently. Synchronous conflcit detection might as well be single-leader replication.
+
+##### Conflict Avoidance
+
+Simplest strategy is to avoid conflicts. If an application can ensure all writes for a record / document go through one leader, then conflicts cannot occur.
+
+Since many implementations of multi-leader replication handle conflicts poorly, avoiding conflicts is a frequently recommended approach.
+
+In an app, you can ensure requests from a particular user are routed tp the same data center and use the leader for reading and writing.
+
+Sometimes you need to change the designated leader for a record (data center failed, user has moved locations etc), and you need to reroute traffic to another datacenter. In this situation avoidance breaks down, and you have the situation of concurrent writes on different leaders.
+
+##### Converging towards a consistent state
+
+No defined ordering of writes in multi-leader config. Not acceptable for DB to end up in inconsistent state. Every replication scheme must ensure that the data is eventually the same in all replicas. DB must resolve conflicts in a _convergent_ way - all replicas must arrive at the same value when all changes are replicated.
+
+Methods of achieving convergent conflict resolution...
+
+* Give each write a unique ID (timestamp, UUID etc.), pick the write with the highest ID as the _winner_, and throw away other writes. If ID is a timestamp, this is known as _last write wins_, although a popular approach it is dangerously prone to data loss.
+
+* Give each replica a unique ID, let writes from higher-ID replica take priority. Also involves data loss.
+
+* Merge the values together e.g. order them alphabetically and concatenate them. Not always possible.
+
+* Record conflict in data structure that preserves all information, then write application code that resolves conflict at laster time, perhaps with user input.
+
+##### Custom conflict resolution logic
+
+The most appropriate way to resolve a conflict will depend on the application. Most multi-leader tools let you write logic to resolve conflcits, which happens either on write or on read...
+
+* Write. As soon as DB detects a conflict in log of replicated changes, calls conflict handler. This typically cannot prompt a user - it runs in the background.
+
+* Read. When conflict is detected, all conflicting writes are stored. Next tiem data is read, multiple versions are returned to the application. May prompt user or auto resolve.
+
+##### Automatic Conflcit Resolution
+
+Amazon frequently cited as an example of surprising effects of a conflict resolution handler. For some time conflict resolution logic only applied to items added, not removed from cart, so items kept reappearing in carts even though they were removed.
+
+Some interesting research into automatically resoliving conflicts caused by concurrent data modifications...
+
+* _Conflict-free replicated data types_ - family of data structures for sets, maps ordered lists etc. that can be concurrently editied by multiple users, and which automatically resolve conflicts in sensible ways.
+
+* _Mergeable persistent data structures_ - track history similar to git, users three-way merge function.
+
+* _Operational transformation_ - conflict resolution algorithm used in Google Docs, specifically designed for concurrent editing of ordered list of items like as the list of chars in a doc.
+
+#### Multi-leader Replication Topologies
+
+_Replication topology_ describes the communication paths along which writes are propagated from one node to another. Some examples...
+
+* All-to-all. Every leader sends its writes to every other leader.
+* Circular. each node receives writes from one node and forwards those writes to one other node.
+* Star. One designated root node forwards writes to all of the other nodes. Can be generalised into a tree.
+
+Problem with circle and star topologies is that one node failure can interrupt the flow of replication messages. Could be fixed by re-routing, but would have to be manual. Fault tolerance of all-to-all is better as it allows messages to travel along different paths.
+
+Mutli-leader replication, writes may arrive in wrong oder at some replicas. Similar to _consistent prefix reads_ problem earlier.
+
+Simply attaching timestamps to every write is not sufficient, because clocks cannot be trusted to be sufficiently in sync. to order these events at other leader.
+
+Conflict detection poorly implemented in many multi-leader replication systems.
+
+#### Leaderless Replication
+
+Some data storage systems abandon concept of leader, and allow any replica to directly accept writes from clients: Dynamo, Riak, Cassandra, Voldemort.
+
+In some leaderless configs, client sends directly to several replicas, whereas in others a coordinating node is used. Unlike leader database, the coordinator does not enforce a particular ordering of writes.
+
+##### Writing to a DB when a node is down
+
+If one replica is not available (i.e. being restarted), in leader-based world, you must perform a failover to continue accepting writes.
+
+In leaderless config, failovers do not exist. Client sends the write to all replicas in parallel.
+
+Problem could arise when the client makes a request to a node that has _stale_ data, i.e. has not yet received an update made by another user.
+To solve this problem, _read requests are also sent to several nodes in parallel_. The client might get different responses from different nodes. Version numbers are used to determine which value is newer.
+
+##### Leaderless Replication Scheme
+
+Two mechanisms are used to ensure that eventually all the data is copied to every replica...
+
+* Read repair. When a clint makes several reads - it can detect stale data. The client then writes the newer value to the stale replica.
+
+* Anti-entropy process. Some datastores have a background process that constantly looks for differences between replicas and copies missing data to another. Unlike the replication log, this does not copy writes in any order, and there might be a delay before data is copied.
+
+Note for systems without anti-entropy process, values that are rarely read may be missing from some replicas and therefore have reduced durability, as repair is only performed when a value is read.
+
+##### Quorums for reading and Writing
+
+How many replicas is enough to consider that a write was successful?
+
+_n_ replicas, every write must be confirmed by _w_ nodes to be considered successful, and we must query _r_ nodes for each read.
+
+As long as _w_ + _r_ > _n_, we expect to get an up-to-date value when reading because at least 1 of the _r_ nodes is up to data.
+
+Reads and writes that obey these rules are called _quorum_ reads and writes. Minimum number of votes required for the r or w to be valid.
+
+In leaderless DBs, _n_, _w_ & _r_ are typically configurable. A common choice is to make _n_ and odd number  and _w_ = _r_ = (n+1)/2 rounded up.
+
+Set parameters suitable for your workload. Setting _w_ = _n_ and _r_ = 1 makes reads faster, but one failed node causes all databases writes to fail.
+
+The quorum condition: w + r > n allows systems to tolerate unavailable nodes as follows..
+* If w < n, we can still process writes if a node is unavailable
+* If r < n, we can still process reads if a node is unavailable
+
+Normally reads and writes are always sent to all n replicas in parallel. The parameters determine how many nodes we wait for. How many of the n nodes need to report success before we consider the write a success.
+
+#### Limitations of Quorum Consistency
