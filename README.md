@@ -928,7 +928,7 @@ To solve this problem, _read requests are also sent to several nodes in parallel
 
 Two mechanisms are used to ensure that eventually all the data is copied to every replica...
 
-* Read repair. When a clint makes several reads - it can detect stale data. The client then writes the newer value to the stale replica.
+* Read repair. When a client makes several reads - it can detect stale data. The client then writes the newer value to the stale replica.
 
 * Anti-entropy process. Some datastores have a background process that constantly looks for differences between replicas and copies missing data to another. Unlike the replication log, this does not copy writes in any order, and there might be a delay before data is copied.
 
@@ -955,3 +955,275 @@ The quorum condition: w + r > n allows systems to tolerate unavailable nodes as 
 Normally reads and writes are always sent to all n replicas in parallel. The parameters determine how many nodes we wait for. How many of the n nodes need to report success before we consider the write a success.
 
 #### Limitations of Quorum Consistency
+
+Often, _r_ and _w_ are chosen to be a majority (> n/2 nodes) because that then ensures that _w_ + _r_ > _n_ while still tolerating up to n/2 failures.
+
+## Chapter 7 - Transactions
+
+Harsh reality of data systems is that many things can go wrong:
+* Failure of software or hardware at anytime
+* Crash of application at any time (halfway through a series of operations)
+* Interruptions in the network can cut off application from database or one database node from another.
+* Clients may write database at the same time, overwriting each other's changes.
+* Client may read data that doesn't make any sense because it has only been partially been updated.
+* Race conditions between clients can cause surprising bugs.
+
+Implementing fault tolerant mechanisms is a lot of work. Requires a lot of careful thinking about what can go wrong, and a lot of testing to ensure that the solution actually works.
+
+_Transactions_ have been the method of choice for simplifying these issues. Way of grouping several reads and writes together into a logical unit. Either all reads & writes succeed (commit) or it fails (abort, rollback).
+
+Transactions make error handling much simpler for an application, no need to worry about partial failure.
+
+Transactions were created to simplify the programming model for applications accessing a database. Application is free to ignore potential error scenarios and concurrency issues - the database handles it.
+
+Not every application needs transactions - sometimes there are advantages to weakening transactional guarantees or abandoning them entirely. Some safety properties can be achieved without transactions.
+
+### The Slippery Concept of a Transaction
+
+With the new distributed databases - there emerged a belief that any large scale system would have to abandon transactions in order to maintain good performance and high availability. On the other hand, transactional databases are presented by vendors as an essential requirement for 'serious applications' - both views are hyperbole.
+
+#### The meaning of ACID
+
+Theo Harder & Andreas Reuter came up with ACID - Atomicity, Consistency, Isolation & Durability. However, one database's implementation of ACID != another's.
+
+##### Atomicity
+
+_Atomic_ - something that cannot be broken down into smaller parts.
+
+ACID atomicity describes what happens if a client wants to make several writes, but a failure occurs after some of the writes have been processed. If writes are in an atomic transaction and cannot be completed due to a fault - then the write is aborted.
+
+##### Consistency
+
+The word consistency is terribly overloaded.
+
+ACID consistency - you have certain statements about your data (invariants) that must always be true.
+
+For example - an accounting system, credits are debits across all accounts must always be balanced. If a transaction starts with a database that is valid according to invariants, any writes during the transation preserve the validity, then you can be sure the invariants are always satisfied.
+
+This consistency is dependent on the application's notion of invariants and it is the responsibility to define the transactions correctly so that they preserve consistency. This is not something that the database guarantee: if you write bad data that violates your invariatns - the database cannot stop you.
+
+Some specific invariants can be checked by the database e.g. foreign key constraints, uniqueness constraints.
+
+Atomicity, Isolation & Durability are properties of the database whereas consistency is a property of the application.
+
+##### Isolation
+
+Databases are subject to race conditions if several clients are accessing the the same section of data at the same time.
+
+ACID Isolation means that concurrently executing transaction are isolated from each other: they cannot step on each other's toes.
+
+Database textbooks formalise isolation as _serializability_.
+
+In practice, serializable isolation is rarely used, because it carries a performance penalty. Oracle 11g, for example, there is an isolation level called 'serializable' but it actually onoy implements _snapshot isolation_, which is a weaker guarantee than serializability.
+
+##### Durability
+
+ACID Durability is the promise that once a transaction has committed successfully, any data it has written will not be forgotten, even if there is a hardware fault or the database crashes.
+
+Single-node database, durability typically means that data was written to disk. Usually also involves a write-ahead log or similar, which allows recovery in the event that data structures on disk are corrupted.
+
+Replciated database - may mean that data has been sucessfully copied to some number of nodes. In order to provide durability guarantee, a database must wait until these writes or replications are complete before repoting a transaction as successfully committed.
+
+### Single-Object and Multi-Object Operations
+
+Multi-object transaction - when you want to modify several objects (rows, documents, records) at once - needed if several peices of data must be kept in sync.
+
+#### Single-object Writes
+
+Atomicity and isolation apply when a single object is being changed.
+
+For example, writing a 20kb JSON document to a database:
+* If network is interrupted - do we store that un-parseable fragment or not?
+* If the power fails while the database is in the middle of overwriting the previous value on disk - do you end up with old and new values spliced together?
+* If another client reads that document while the write is in progress - will it see a partially updated valued?
+
+Storage engines provide atomicity and isolation on the level of a single object.
+
+Atomicity can be implemented using a log for crash recovery, and isolation can be implemented using a lock on each object.
+
+#### The need for multi-object Transactions
+
+Many distributed databases have abandoned multi-object transactions because they are difficult to implement across partitions, and they can get in the way in some scenarios where very high availability or performance is required. Nothing that fundamentally prevents transactions in a distributed database.
+
+#### Handling errors and aborts
+
+Key feature of a transaction is that is can be aborted safely and retried if an error occurred.
+
+If the database is in danger of violating ACID guarantee - it would rather abandon than allow it to remain half-finished.
+
+*Many software developers prefer to think only about the happy path rather than the intricacies of error handling.*
+
+Although retrying an aborted transaction is a simple and effective error handling mechanism, it isn't perfect:
+* If transaction succeeded, but the network failed while the server tried to acknowledge the successful commit to the client. Retrying the transaction causes it to be performed twice - unless you have an additional application-level deduplication mechanism in place - unlikely!
+
+* If error is due to overload, retrying the problem will make the problem worse, not better. Limit retries, exponential backoff, handle over-load related errors differently if possible.
+
+* It is only worth retrying after transient errors (deadlock, isolation violation, network interruptions); after a permanent error - retry would be pointless.
+
+* If the transaction also has side effects outside of the database, those effects may happen even if the transaction is aborted. E.g. if you are sending an email - don't want to send the email again every time you retry the transaction.
+
+### Weak Isolation Levels
+
+Two transactions don't touch the same data - can be safely run in parallel. Race conditions only come into play when one two transactions either read and write or write and write the same data at once.
+
+Concurrency is very difficult to reason about, and very difficult to track down bugs.
+
+Databases have often tried to hide concurrency issues from application developers by providing transaction isolation.
+
+Serializable isolation has a performance cost, and many databases will not pay the price. Therefore it is common for systems to use weaker levels of isolation, which protect against some concurrency issues, but not all.
+
+Even many popular relational data‐ base systems (which are usually considered “ACID”) use weak isolation, so they wouldn’t necessarily have prevented these bugs from occurring.
+
+#### Read Committed
+
+The most basic level of transaction isolation is _read committed_, which makes two guarantees:
+1. When reading from the database - you will only see data that has been committed (no dirty reads).
+2. When writing to the database, you will only overwrite data that has been committed (no dirty writes).
+
+##### No dirty reads
+
+If another transaction can see data that has not yet been committed or aborted - dirty read.
+
+Why is it useful to prevent dirty reads?
+* If transaction needs to update several objects - dirty read means that nother transaction may see some of the updates but not others.
+* If a transaction aborts, any writes it has made need to be rolled back. If the database allows dirty reads - transaction may see data that is later rolled back.
+
+##### No dirty writes
+
+Two transactions trying to update the same object at the same time.
+
+Read committed transactions must prevent dirty writes, normally by delaying writes until the first has committed or aborted.
+
+Preventing dirty writes avoids some concurrency problems:
+*
+
+## Chapter 8 - The Trouble with Distributed System
+
+
+
+## Chapter 10 - Batch Processing
+
+"A system cannot be successful if it is too strongly influenced by a single person. Once the initial design is complete and fairly robust, the real test begins as people with many different viewpoints undertake their own experiments." —Donald Knuth
+
+Three different types of systems:
+* Services (online systems): Service receives request, tries to handle as quickly as possible, sends response back. Response time primary measure of performance.
+* Batch processing (offline systems): Large amount of input data, processes it, and produces some output. Normally no user waiting for the output. primary measure of performance is _throughput_, time taken to process data of a certain size.
+* Stream processing systems (near-real-time systems): Somewhere between online & offline processing. Consumes input & produces output. Operates on events shortly after they happen. Lower latency than the equivalent batch systems.
+
+MapReduce is a batch processing algorithm, major step forward in terms of scale of processing that could be achieved on commodity hardware, though importance is now declining.
+
+### Batch Processing with Unix Tools
+
+Unix tools are incredibly powerful. They will process gigabytes of of log files in a matter of seconds.
+Surprisingly many data analyses can be done in a few minutes using some combination of awk, sed, grep, sort, uniq, and xargs, and they perform surprisingly well. https://adamdrake.com/command-line-tools-can-be-235x-faster-than-your-hadoop-cluster.html
+
+#### Sorting versus in-memory aggregation
+
+Ruby script vs. Unix pipline - which is better?
+
+Ruby version needs a hash-map of urls to counters. If the number of distinct urls is small enough - has a small enough hash-map - laptop would work fine.
+
+If the job's working set is larger than the available memory, sorting approach (unix pipeline) can make efficient use of disks.
+
+`sort` in Unix handles larger-than-memory datasets by spilling to disk, and automatically parallelizes sorting across multiple cpu cores. Bottleneck will be disk IO.
+
+### The Unix Philosophy
+
+1. Make each program do one thing well. To do a new job, build afresh rather than complicate old programs by adding new “features”.
+2. Expect the output of every program to become the input to another, as yet unknown, program. Don’t clutter output with extraneous information. Avoid stringently columnar or binary input formats. Don’t insist on interactive input.
+3. Design and build software, even operating systems, to be tried early, ideally within weeks. Don’t hesitate to throw away the clumsy parts and rebuild them.
+4. Use tools in preference to unskilled help to lighten a programming task, even if you have to detour to build the tools and expect to throw some of them out after you’ve finished using them.
+
+Sounds a lot like Agile & Devops movements of today!
+
+Unix shell lets us easily compose tyhese small programs into suprisingly powerful data processing jobs.
+
+What does unix do to enable this philosophy?
+* Uniform interface: all programs must use the same input/output interface, a file descriptor, an ordered sequence of bytes.
+* Separation of logic and wiring: Pipes let you attach stdout of one process to stdin of another Separating the input/output wiring from the program logic makes it easier to compose small tools into bigger system.
+* Transparency and experimentation: input files to unix commands are treated as immutable, pip the output into less and see if it has the expected form, pipe output into a file to restart at later stage.
+
+### MapReduce and Distributed Filesystems
+
+A single MapReduce job is comparable to a single Unix process: it takes one or more inputs and produces one or more outputs. MapReduce job does not normally modify input.
+
+MapReduce jobs read and write files on a distributed filesystem. Hadoop Distributed File System (HDFS), Hadoop's open-source re-implementation of the Google File System (GFS).
+
+HDFS based on _shared-nothing_ principle. Each VM / node uses its own CPU, RAM & disks independently. Any co-ordination is done at the software level, using a conventional network. Shared-nothing approach requires no special hardware, only computers connected by a conventional datacenter network.
+
+HDFS is in contrast to shared-disk approach of Network Attached Storage (NAS) and Storage Area Network (SAN). These use centralised storage appliance.
+
+HDFS consists of a daemon process running on each machine, exposing a network service that allows other nodes to access files stored on that machine.
+Central server called NameNode keeps track of which blocks are stored on which machine. Thus, creates one big filesystem that can use the space of all machines running the daemon.
+To tolerate machine and disk failures, file blocks are replicated on multiple machines. File access and replication are done over a conventional datacenter network without special hardware.
+
+The biggest HDFS deployments run on tens of thousands of machines with combined storage of hundreds of petabytes. Such large scale has become viable because the cost of data storage and access on HDFS, using commodity hardware and open source software, is much lower than that of the equivalent capacity on a dedicated storage appliance.
+
+### MapReduce Job Execution
+
+MapReduce is a programming framework with which you can write code to process large datasets in a distributed filesystem like HDFS.
+
+The pattern of data processing in MapReduce is similar to this example of reading server log lines:
+1. Read a set of input files, break it up into _records_.
+2. Call mapper function to extract key and value from each input record.
+3. Sort all of the key-value-pairs by key.
+4. Call the reducer function to iterate over the sorted key-value-pairs. If multiple occurrences than sorting has made them adjacent so combine without storing loads in memory.
+
+To create a MapReduce job, you need to implement two callback functions:
+* Mapper - called once on each record to extract the key and value from input. Does not keep any state between inputs.
+* Reducer - takes key-value pairs produced by mappers, and calls the reducer with an iterator over that collections of values.
+
+#### Distributed Execution of MapReduce
+
+MapReduce can parallelize a computation across many machines, without you having to write code to explicitly handle the parallelism.
+Parallelization is based on partitioning, the input is usually a directory in the HDFS.
+The MapReduce scheduler tries to run each mapper on one of the machines that stores a replica of the input file. This principle is called "putting the computation near the data" - saves copying the input file over the network, reducing network load and increasing locality.
+
+In most cases - application code is not yet present on job running node. MapReduce first copies the code to the machine then starts calling map task.
+
+Mapper takes input, and produces key and value from each record.
+All kvps with same key end up at the same reducer.
+Key-value pairs are then sorted - though likely too large to be sorted on one machine.
+Reducers then start fetching the output from the mappers - download the files of sorted key-value pairs for their partition.
+Reducer merges the files and runs the reduce function on all records with the same key.
+The output is then written to a file on the DFS.
+
+#### MapReduce Workflows
+
+Range of problems that you can solve with a simple MapReduce job is limited. Can determine page-views by url but not the most popular url (requires an extra stage of sorting).
+
+Common for MapReduce jobs to be chained together into _workflows_.
+Chained MapReduce jobs are less like unix pipelines, and more like a command that write the output of one process to a temporary file.
+
+Batch job is only considered valid when the job has completed successfully. One job in a workflow can only start when the one before has finished.
+
+Workflows consisting of 50 to 100 MapReduce jobs are common when building recommendation systems. https://www.slideshare.net/s_shah/the-big-data-ecosystem-at-linkedin-23512853
+
+
+### Reduce-Side Joins and Grouping
+
+In many datasets it is common for one record to have an association with another record:
+* foreign key in a relational model
+* document reference in a document model
+* edge in a graph model
+
+Databases typically use indexes to quickly locate records of interest.
+MapReduce has no concept of indexes. Given input files, it reads the entire content of all those files.
+
+Want to read a small number of records? Full table scan is very expensive.
+Analytic queries commonly need aggregates over a large number of records.
+
+Joins in batch processing mean resolving all occurrences of one association within a dataset.
+
+Example of analysing user activity events on p404.
+
+
+
+
+
+
+
+
+
+
+## Chapter 11 - Stream Processing
