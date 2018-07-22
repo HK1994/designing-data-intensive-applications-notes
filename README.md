@@ -1217,6 +1217,144 @@ Joins in batch processing mean resolving all occurrences of one association with
 
 Example of analysing user activity events on p404.
 
+Goal - for each entry in log of user events - append on the user's details.
+
+Simplest implementation would be to query remote DB for each user ID it encounters.
+Would suffer very poor performance, throughput limited to round trip to external server & running a very large number of queries could overwhelm the database.
+
+To achieve good throughput - computation must be local to one machine. Better to take a copy of the user database and put it in the same HDFS. Then use MapRedyce to bring together all relevant records.
+
+#### Sort-merge joins
+
+Mapper's job is to extract a key-value-pair from each input record.
+User activity log mapper -> (ID, URL)
+User database mapper -> (ID, DOB)
+
+Reducer partition then takes the sorted values as per the parition and combines to get a result.
+
+_Secondary sort_ is when the data is ordered such that the reduces sees the record from database mapper first.
+
+Since the reducer processes all of the records for a particular user ID in one go - it only needs to keep one user record in memory at one time.
+Never needs to make network requests.
+
+"Bringing related data together in the same place"
+
+Mappers 'send messages' to the reducers. When emitting key-value-pair, the key acts like the destination address to which the value should be delivered.
+
+MapReduce programming model has separated the physical network communication aspects of the computation from the application logic.
+MapReduce shields application code from dealing with partial failures and crashes.
+
+#### Group By
+
+Common functionality is to perform some kind of aggregation within each group.
+
+In MapReduce the simplest approach is to set up the mappers so that the key-value pairs they produce use the desired grouping key. The partitioning and sorting process then brings together all the record with the same key in the same reducer.
+
+Thus, grouping and joining look quite similar in MapReduce.
+
+#### Handling Skew
+
+The pattern of "Bringing related data together in the same place" breaks down if there is a large amount of data related to a single key.
+This can be problematic when the distribution of records by keys is skewed a.k.a - _linchpin objects_ or _hot keys_.
+Thus one reducer would process significantly more records than the others. MapReduce completes when all jobs are complete - thus can be made very slow.
+
+Solutions include - running a sampling jobs first to determine which keys are _hot_ - the hot record is then sent to one of many reducers.
+Any other input to the join - must be replicated to all reducers.
+
+### Map-Side Joins
+
+Reduce-side joins - do not need to make any assumptions about the input data. Whatever its properties the mappers can prepare the data to be ready for joining.
+BUT - sorting, copying to reducers & merging of reducer inputs can be expensive.
+
+If you can make some assumptions about the input data - make the job faster using a _map-side join_ - no reducers and no sorting - reads one input block from DFS and write one black to DFS.
+
+#### Broadcast Hash Joins
+
+Case when large dataset joined by small dataset - small enough to fit into memory on the mapper. Mapper simply reads value from table into the record.
+
+This is called a _broadcast hash join_. Broadcast - the small dataset is 'broadcast' to all mappers, hash - hash table.
+Alternatively, store the small join input in a read-only index on the lcoal disk. frequently used keys will remain on the OSs system page cache. Almost as fast as in memory hash table.
+
+#### Partitioned hash joins
+
+If inputs to map-side join are partitioned in the same way - hash join can be applied to each partition independently. If done correctly, the mapper only needs to read on partition into memory from the input databases.
+Only works if both of the join's inputs have the same number of partitions.
+
+#### Map-side merge joins
+
+This variant applies if the input datasets are not only partitioned in the same way - but also sorted on the same key.
+In this case - does not matter if the inputs can fit into memory because the mapper can perform the same merging operation normally done by a reducer.
+
+#### MapReduce workflows with map-side joins
+
+Reduce-side join output - partitioned and sorted by the join key.
+Map-side join output - partitioned and sorted in the same way as the large input.
+
+
+### The Output of Batch Workflows
+
+OLTP - look up small number of records by key, using indexes.
+Analytical - scan large number of records performing groupings and aggregations.
+
+Batch processing closer to Analytical than OLTP.
+
+#### Building search indexes
+
+Original use of MapReduce was to build indexes for search. Though moved to Percolator in 2010.
+
+#### Key-value stores as batch process output
+
+The obvious choice of getting MapReduce output into database is to use the client library for your database directly in a mapper or reducer.
+Bad for several reasons:
+* Making network requests for every record is orders of magnitude slower than normal throughput of a batch task.
+* MapReduce jobs run many tasks in parallel. Lots of mappers writing to a database can overwhelm the database.
+* MapReduce provides all or nothing semantics. Writing to an external database inside a job produces externally visible effects that cannot be hidden.
+
+Better solution is to write brand-new database as output from the batch job - then copy new database onto the database server.
+
+#### Philosophy of batch process outputs
+
+Handling of MapReduce outputs follows unix philosophy - by treating outputs as immutable and avoiding side-effects.
+Batch jobs not only achieve good performance, but become much easier to maintain:
+* If the output is corrupted - you can roll back to a previous version of the code and rerun the job. Even simpler would be to keep previous output in a different directory and switch back to it.
+* Ease of rolling back means feature development can proceed more quickly than an environment where mistakes could mean irreversible damage.
+
+
+### Comparing Hadoop to Distributed Databases
+
+#### Diversity of Storage
+Databases require a consistent data model (relational, documents), whereas files in distributed file systems are just byte sequences.
+Hadoop opened up the possibility of indiscriminately dumping data into HDFS, and only later figuring out how to process it further.
+
+In practice, it appears that simply making data available quickly— even if it is in a quirky, difficult-to-use, raw format—is often more valuable than try‐ ing to decide on the ideal data model up front.
+
+Simply dumping data in its raw form allows for several such transformations. This approach has been dubbed the sushi principle: “raw data is better”.
+
+Hadoop often used for ETL processes - data from analytical processing systems dumped into DFS - MapReduce jobs written to transform it into relational form then loaded into a DataWarehouse for analytical purposes.
+
+#### Diversity of processing models
+
+SQL is very good when servicing requests for which it is built and optimised.
+
+Not all kinds of processing can be sensibly expressed as SQL queries e.g. Machine learning and recommendation systems.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
