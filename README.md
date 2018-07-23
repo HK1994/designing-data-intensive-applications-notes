@@ -1336,32 +1336,166 @@ Hadoop often used for ETL processes - data from analytical processing systems du
 
 SQL is very good when servicing requests for which it is built and optimised.
 
-Not all kinds of processing can be sensibly expressed as SQL queries e.g. Machine learning and recommendation systems.
+Not all kinds of processing can be sensibly expressed as SQL queries e.g. Machine learning and recommendation systems. Often very specifc to the application.
 
+You _can_ build a SQL query execution engine on HDFS & MapReduce - that is what Hive did.
 
+The various processing models can all be run on a single-shared use cluster all accessing the same files.
 
+#### Designing for frequent faults
 
+MapReduce can tolerate the failure of a map or reduce task without it affecting the job as a whole - retry certain task.
+MapReduce eagerly writes to disk for fault tolerance and because dataset too large to fit in memory.
 
+Overcommitting resources allows for better utilization of machine and greater efficiency than systems that segregate production and non-production tasks.
 
+General priority preemption is not supported in YARN, Mesos or Kubernetes at the moment.
 
+### Beyond MapReduce
 
+MapReduce, though popular, is just one among many possible programming models for distributed systems.
+Depending on the volume of data, the structure of the data, and the type of pro‐ cessing being done with it, other tools may be more appropriate.
 
+MapReduce is very robust, you can process arbitrarily large quantities of data on an unreliable multi-tenant system with frequent task terminations.
+Other tools are orders of magnitude faster for some kinds of processing.
 
+#### Materialization of Intermediate State
 
+Publishing intermediate data to a well-known location in the distributed filesystem allows loose coupling so that jobs don’t need to know who is producing their input or consuming their output.
 
+In many cases the output will only ever be the input to one other job.
 
+MapReduce's approach of fully materializing intermediate state has downsides:
+* MapReduce job can only start when all proceeding tasks are complete. Skewed load means that some straggler tasks can take much longer that others. Waiting sucks.
+* Mappers are often redundant - if reducer output was partitioned and sorted then the reducers could be chained together directly.
+* Storing intermediate state is often overkill for such temporary data.
 
+#### Dataflow engines
 
+To fix these problems with MapReduce, several execution engines for distributed batch computing were developed: Spark, Tez & Flink.
+They work by repeatedly calling a user-defined function to process one record at at time on a single thread.
 
+Unlike MapReduce they need not take strict roles of alternating map and reduce, but can be combined more flexibly - provide several options for connecting one operator's output to another.
 
+This style of processing engine has advantages over the MapReduce model:
+* Expensive work is only performed where it needs to be.
+* No unnecessary map tasks - often can be incorporated into the reducer.
+* Scheduler can make locality optimizations as it knows of all tasks.
+* Operators can start executing as soon as their input is ready; no need to wait for entire preceding stage to finish before the next one starts.
+* Existing JVM processes can be reused to run new operators, reducing start up overhead.
 
+Workflow usually faster than MapReduce due to the optimisations taking place.
 
+Spark uses resilient distributed dataset (RDD) abstraction for tracking ancestry of data to achieve fault tolerance if intermediate state is lost.
 
+Recovering from faults by recomputing data is not always the right answer: if the intermediate data is much smaller than the source data, or if the computation is very CPU-intensive, it is probably cheaper to materialize the intermediate data to files than to recompute it.
 
+#### Discussion of Materialization
 
+Dataflow engines more like unix pipes than MapReduce. Flink starts passing output of an operator to other operators rather than waiting for the input to be complete before starting to process it.
 
+Sorting operation inevitably needs to consume entire input before producing any output. Any sorting operator needs to accumulate state, at least temporarily.
 
+### Graphs and Iterative Processing
 
+Graphs are interesting in the batch processing context - recommendataion algorithms and the Google PageRank algorithm are two examples.
 
+Possible to store a graph in a distributed file system - algorithms are iterative:
+1. External scheduler runs a batch process to calculate one step of the algorithm.
+2. When process completes - scheduler checks if batch process is finished i.e. completion condition met.
+3. If no, run another round of the batch process.
+
+MapReduce very inefficient here - does not account for iterative nature of the algorithm - try and materialize entire intermediate state.
+
+#### The pregel processing model
+
+Bulk synchronous parallel (BSP) graph processing optimization used very widely: Apache Giraph, Spark GraphX, Flink Gelly etc.
+
+Pregel: one vertex can send a message to another vertex, typically sent along the edges in a graph.
+
+In each iteration - function is called at the vertex, passing it all messages sent to it. Vertex remembers state from one iteration to the next - function only needs to process new incoming messages.
+
+Pregel guarantees 'exactly one' semantics at the destination vertex.
+
+#### Parallel execution
+
+Ideally vertexes partitioned locally to other verticies they communicate with alot.
+
+Graph algorithms often have a lot of cross-machine overhead, and the intermediate state is often bigger than the original graph.
+
+The overhead of sending messages over the network can significantly slow down distributed graph algorithms.
+
+If your graph can fit in memory on a single computer, it’s quite likely that a single-machine (maybe even single-threaded) algorithm will outperform a dis‐ tributed batch process.
+
+If the graph is too big to fit on a single machine, a distributed approach such as Pregel is unavoidable; efficiently parallelizing graph algorithms is an area of ongoing research.
+
+### High-Level APIs and Languages
+
+As the problem of physically operating batch processes at such scale has been considered more or less solved, attention has turned to other areas:
+* improving the programming model
+* improving the efficiency of processing
+* broadening the set of problems that these technologies can solve
+
+High-level interfaces allow interactive use, in which you write analysis code incrementally in a shell and run it frequently to observe what it is doing.
+This style of development is very helpful when exploring a dataset and experimenting with approaches for processing it.
+It is also reminiscent of the Unix philosophy.
+
+The freedom to easily run arbitrary code has long distinguished MapReduce from MPP databases. Databases have facilities for writing user defined function - often cumbersome and not well integrated with dependency management software.
+
+By incorporating declarative aspects into their high-level APIs, batch processing frameworks are looking more like MPP databases!
+
+#### Specialization for different domains
+
+MPP databases have served the needs of business intelligence analysts and business reporting, but that is just one among many domains in which batch processing is used.
+
+Another domain of increasing importance is statistical and numerical algorithms, which are needed for machine learning applications such as classification and recommendation systems.
 
 ## Chapter 11 - Stream Processing
+
+In reality, a lot of data is unbounded because it arrives gradually over time - batch processors must artifi‐ cially divide the data into chunks of fixed duration.
+
+In general, a “stream” refers to data that is incrementally made available over time.
+
+### Transmitting Event Streams
+
+_Event_ - small, self-contained immutable object containing details of something that happened.
+
+In streaming parlance - an event is generated once by a _producer_ then potentially processed by multiple _consumers_.
+Related events are grouped together into a _topic_ or a _stream_.
+
+File or database is sufficient - each consumer polls the data for events since it last checked. However, polling becomes expensive if the datastore is not designed for this usage.
+
+Specialized tools developed for the purpose of delivering event notifications.
+
+#### Messaging Systems
+
+Direct communication channel like pipe or TCP connects exactly one sender with one recipient.
+
+Within this publish/subscribe model, different systems take a wide range of approaches:
+* What happens if the producers send messages faster than the consumers can process them?
+  * Three options - drop, buffer, control i.e. don't allow them to send.
+  * Unix pipes and TCP use control, small fixed-size buffer - blocks sender if full
+  * If messages are buffered, what happens as this grows? Write to disk? How does the disk access affect performance of messaging system?
+
+* What happens if modes crash or temporarily go offline - are any messages lost?
+
+A nice property of the batch processing systems is that they provide a strong reliability guarantee: failed tasks are automatically retried, and partial output from failed tasks is automatically discarded.
+
+#### Message brokers
+
+_Message broker_ essentially a database optimized for handling message streams.
+ By centralizing the data in the broker - systems can more easily tolerate clients that come and go - durability is moved to the broker.
+
+ Asynchronicity is a consequence of queueing - only wait for the broker to confirm it has buffered the message.
+
+#### Message brokers versus databases
+
+Practical differences between message brokers and databases:
+* Databases keep data until it is explicitly deleted. Message brokers delete data when delivered to consumers.
+* Message brokers assume small working set as they quickly delete messages. Performance can degrade if message takes longer to process.
+* When querying database - result is typically based on a point in time snapshot. If client qrites new data - doesn't show up in result.
+
+#### Multiple Consumers
+Two main patterns when multiple consumers read messages in the same topic:
+* Load balancing - Each message is delivered to one of the consumers - helpful if the messages are expensive to process.
+* Fan out - each message delivered to _all_ of the consumers. 
