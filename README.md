@@ -350,7 +350,7 @@ vertical scaling (more powerful machine) / horizontal scaling (distributing load
 
 Good architectures involve a pragmatic mixture of the two approaches, several fairly powerful machines can be simpler and cheaper than a large number of small VMs.
 
-_elastic systems_ add compute when a load increase is detected, whereas others are scaled manually. Manual scaling is simpler and has fewer operational suprises, elastic is good is load is highly unpredictable.
+_elastic systems_ add compute when a load increase is detected, whereas others are scaled manually. Manual scaling is simpler and has fewer operational suprises, elastic is good if load is highly unpredictable.
 
 Distributing stateful systems across nodes can increase a lot of complexity, common wisdom says to keep you database on a single node until scaling cost or high availability requirements force you to make it distributed.
 
@@ -362,7 +362,7 @@ Architectures that scale well for a particular application are built around assu
 
 The majority of the cost of software is in its ongoing maintenance: fixing bugs, investigating failures, repaying tech debt and adding new features.
 
-We can and should design software in such a way that will minimize pain during maintenance, avoiding creatign legacy software.
+We can and should design software in such a way that will minimize pain during maintenance, avoiding creating legacy software.
 
 Three design principles for software systems:
 1) Operability - easy for operations teams to keep the system running smoothly
@@ -396,7 +396,7 @@ Simplicity should be a key goal for the systems we build.
 
 Complexity is accidental if it is not inherent in the problem that the software solves but arises only from the implementation.
 
-Good abstractions can hide a great deal of implementation detail behind a clean, simple-to-umderstand facade.
+Good abstractions can hide a great deal of implementation detail behind a clean, simple-to-understand facade.
 
 Finding good abstractions is very hard.
 
@@ -416,7 +416,7 @@ Data models are how we _think about the problem_ that we are solving
 
 Most applications are built by layering one data model on top of another. The key question is: how is it represented in terms of the next-lower layer?
 
-The basic idea is: each layer hides the complexity of the layers below it by provdigin a clean data model. These abstractions allow different groups of people to work together effectively.
+The basic idea is: each layer hides the complexity of the layers below it by providing a clean data model. These abstractions allow different groups of people to work together effectively.
 
 The data model has such a profound effect on what the software above it can do, so it is important to choose one appropriate to the application.
 
@@ -433,7 +433,7 @@ NoSQL is the latest attempt to overthrow the relational model's dominance.
 Several driving forces behind the adoption of NoSQL databases including:
 - Need for greater scalability than relational databases can easily achieve: large datasets or high write throughput
 - Widespread preference for FOSS over commercial database products
-- Specialized query operations that are nto well supported by the relational model
+- Specialized query operations that are not well supported by the relational model
 - Frustration with the restrictiveness of relational schemas, and a desire for a more dynamic and expressive data model
 
 Different applications have different requirements, and the best choice of one technology for one use case may well be different from the best choice for another use case.
@@ -442,7 +442,7 @@ _Polyglot persistence_ relational and nonrelational datastores used in parallel
 
 ### The Object-Relational Mismatch
 
-Most application development today is done in OO langauges, which leads to the criticism of the SQL data model: if data is stored in relational tables, and awkward translation layer is required between the objects in the application code and the db model of rows, tables and columns. _Impedance mismatch_.
+Most application development today is done in OO languages, which leads to the criticism of the SQL data model: if data is stored in relational tables, and awkward translation layer is required between the objects in the application code and the db model of rows, tables and columns. _Impedance mismatch_.
 
 For a Data Structure like a resume, wich is mostly a self-contained _document_, a JSON representation can be quite appropriate.
 
@@ -467,13 +467,13 @@ Removing duplication is the key idea behind _normalization_ in databases.
 
 NoSQL reopened the debate on how best to represent many-to-many relationships in a database.
 
-IBM's Information Management System used a simple data model called the hierarchical mode, which has remarkable similarities to the JSON model of used by document data-bases. Like document databases, it worked well for one-to-many relatinships but made many-to-many difficult.
+IBM's Information Management System used a simple data model called the hierarchical mode, which has remarkable similarities to the JSON model of used by document data-bases. Like document databases, it worked well for one-to-many relationships but made many-to-many difficult.
 
-A relational table is simple a collection of tuples, and that's it. The query optimizer automatically decides which parts of the query to execute in which order, and which indexes to use.
+A relational table is a simple collection of tuples, and that's it. The query optimizer automatically decides which parts of the query to execute in which order, and which indexes to use.
 
 ### Relational Versus Document Databases Today
 
-Document data model pros: schema flexibility, bettwe perfance due to locality and close to data structures used by the application.
+Document data model pros: schema flexibility, better performance due to locality and close to data structures used by the application.
 
 Relational data model pros: better support for joins, and many-to-one and many-to-many relationships.
 
@@ -500,13 +500,13 @@ _schema-on-write_ -> status compile-time type checking
 
 Schema changes have a bad reputation of being slow and requiring downtime. MySQL the worst case.
 
-Schema-on-read approach is advantageous if the items don't all have the same structure. Many different types of objects, not practical to put each type in its own table. Strucutre is determined by external systems over which you have no control, and may change at anytime.
+Schema-on-read approach is advantageous if the items don't all have the same structure. Many different types of objects, not practical to put each type in its own table. Structure is determined by external systems over which you have not control, and may change at anytime.
 
 Schemas useful mechanism for documenting and enforcing that structure.
 
 #### Data locality for queries
 
-Document is usuall stored as a single continuous string encoded as JSON, XML or BSON in Mongo.
+A document is usually stored as a single continuous string encoded as JSON, XML or BSON in Mongo.
 
 If application often needs to access the entire document there is a performance advantage to storage locality, having the data split across multiple table can take much longer.
 
@@ -592,7 +592,7 @@ Research indicates in-memory DB can support datasets larger than RAM through _an
 
 Online transaction processing (OLTP).
 
-Data analytics has very different _access patterns_ to transactional processing. Scans huge number of records, and calculates aggregate statistics, rather than returning raw data.
+Data analytics has very different _access patterns_ to transactional processing. Scans a huge number of records, and calculates aggregate statistics, rather than returning raw data.
 
 Property | OLTP | OLAP
 --- | --- | ---
@@ -616,7 +616,7 @@ Data warehouses are used in a formulaic style know as a _star schema_.
 
 Centre of the schema is the _fact table_, which represents an event that occurred at a particular time e.g. customer's purchase of a product, or click by a user.
 
-TODO: p94 Example of a star schema image
+![](images/star_schema.png)
 
 ### Column-Orientated Storage
 
@@ -624,13 +624,13 @@ If you have trillions of rows and petabytes of data in your fact tables, storing
 
 OLTP DBs and Document DBs are laid out in a similar fashion, each row or document is stored as one contiguous sequence of bytes.
 
-Column orientated storage is simple, store all the values from each column together instead. Then you only need to read and parse thhose columns that are used in that query.
+Column orientated storage is simple, store all the values from each column together instead. Then you only need to read and parse those columns that are used in that query.
 
 #### Column Compression
 
 Column orientated storage leads itself well to compression.
 
-_Bitmap encoding_ is particularly effective in data warehouses.\
+_Bitmap encoding_ is particularly effective in data warehouses.
 
 ### Writing to Column-Orientated storage
 
@@ -640,7 +640,7 @@ Update in place approach like B-Trees is not possible with compresed columns. Mo
 
 LSM Trees are a good solution. When enough writes have accumulated in memory, they are combined with an existing column files on disk and written to new files in bulk.
 
-_Data cube_ is a common special case of a materialized view, it is s grid of aggregates grouped 	by different dimensions.
+_Data cube_ is a common special case of a materialized view, it is a grid of aggregates grouped 	by different dimensions.
 
 ## Chapter 4 - Encoding and Evolution
 
@@ -649,7 +649,7 @@ Chapter 1 introduced the idea of _evolvability_: we should aim to build systems 
 Relational schemas assume all data conforms to one schema, which can be changed. Schema-on-read (document) databases don't enforce a schema and can contain a mixture of older and newer format.
 
 When formats change, this normally requires a corresponding change in the application code. In large applications, this cannot usually happen instantaneously:
-- Server side application, you may want to perform a _rolling upgrade_, deployign to a few nodes at a time, checking that things are running smoothly.
+- Server side application, you may want to perform a _rolling upgrade_, deploying to a few nodes at a time, checking that things are running smoothly.
 - Client side you are at the mercy of the user.
 
 New and old version of the code may potentially co-exist at once. For this to work, we need to maintain copatibility in both directions:
@@ -767,15 +767,15 @@ Two popular approaches to web services: REST and SOAP.
 
 REST is a design philosophy, not a protocol. Emphasises simple data formats, using URLs for identifying resources and HTTP features for cache control, authentication, and content type negotiation.
 
-SOAP is an XML-based protocl for making network API requests. Deliberately independent from HTTP, and avoids using HTTP features.
+SOAP is an XML-based protocol for making network API requests. Deliberately independent from HTTP, and avoids using HTTP features.
 
-SOAP API is described using an XML-based language called Web Services Description Language or WSDL. WSDL is not human readable, and users rely heavily on tool support, code generation, and IDEs.
+SOAP API is described using an XML-based language called Web Services Description Language or WSDL. WSDL is not human readable, and users realy heavily on tool support, code generation, and IDEs.
 
 ##### The problems with remote procedure calls (RPCs)
 
 Web services are merely the latest incarnation of technologies to make API requests across a network, many of which have serious problems.
 
-Variants on the idea of a _remote proceedure call_ (RPC). RPC model tries to make a request to a remote network service look the same as calling a function, within the same process (location transparency). Although it appears convenient at first, the approach is fundamentally flawed.
+Variants on the idea of a _remote procedure call_ (RPC). RPC model tries to make a request to a remote network service look the same as calling a function, within the same process (location transparency). Although it appears convenient at first, the approach is fundamentally flawed.
 
 Network request is very different from a local function call:
 - Local function call is predictable and either succeeds or fails, depending on parameters under your control. Network request is unpredictable: request or response may be lost, remote machine may be slow or unavailable.
@@ -821,7 +821,7 @@ _Asynchronous message-passing systems_ are somewhere between RPC and databases. 
 Advantages compared to direct RPC:
 - Can act as a buffer if the recipient is unavailable or overloaded, and thus can improve reliability.
 - Automatically re-delivers messages to a process that has crashed, and prevents messages from getting lost.
-- Avoids the sender needing to know the IP address and port numver of the recipient.
+- Avoids the sender needing to know the IP address and port number of the recipient.
 - One message can be sent to several recipients.
 - Logically decouples the sender from recipient.
 
